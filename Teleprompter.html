@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Teleprompter</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #1a1a1a;
+      color: #f0f0f0;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── SETUP SCREEN ── */
+    #setup {
+      display: flex;
+      height: 100vh;
+      gap: 0;
+    }
+
+    #left-panel {
+      display: flex;
+      flex-direction: column;
+      width: 420px;
+      min-width: 320px;
+      padding: 32px 28px;
+      gap: 16px;
+      border-right: 1px solid #2e2e2e;
+      background: #141414;
+      overflow-y: auto;
+    }
+
+    #left-panel h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #fff;
+      flex-shrink: 0;
+    }
+
+    #left-panel h1 span { color: #4f9eff; }
+
+    #script-input {
+      flex: 1 1 0;
+      min-height: 120px;
+      max-height: 50vh;
+      background: #1f1f1f;
+      border: 1px solid #333;
+      border-radius: 10px;
+      padding: 16px;
+      font-size: 14px;
+      color: #e0e0e0;
+      resize: vertical;
+      outline: none;
+      line-height: 1.8;
+      font-family: inherit;
+      transition: border-color 0.2s;
+      overflow-y: auto;
+    }
+
+    #script-input:focus { border-color: #4f9eff; }
+    #script-input::placeholder { color: #555; }
+
+    .size-control {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .size-label-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .size-label-row label { font-size: 13px; color: #888; }
+    .size-label-row span  { font-size: 13px; color: #4f9eff; font-weight: 600; }
+
+    .size-control input[type=range] {
+      width: 100%;
+      accent-color: #4f9eff;
+      cursor: pointer;
+    }
+
+    /* Line count selector */
+    #line-count-selector {
+      display: flex;
+      gap: 8px;
+    }
+
+    .lc-btn {
+      flex: 1;
+      padding: 8px 0;
+      background: #1f1f1f;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #666;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+
+    .lc-btn:hover { border-color: #555; color: #aaa; }
+
+    .lc-btn.active {
+      background: #1a3a5c;
+      border-color: #4f9eff;
+      color: #4f9eff;
+    }
+
+    #start-btn {
+      background: #4f9eff;
+      color: white;
+      border: none;
+      padding: 13px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      width: 100%;
+      flex-shrink: 0;
+    }
+
+    #start-btn:hover  { background: #3a8aed; }
+    #start-btn:active { transform: scale(0.98); }
+
+    .hint {
+      font-size: 12px;
+      color: #444;
+      line-height: 1.6;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .hint strong { color: #666; }
+
+    /* Right panel — live preview */
+    #preview-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #0d0d0d;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #preview-label {
+      position: absolute;
+      top: 14px;
+      left: 20px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #333;
+      user-select: none;
+    }
+
+    #width-guide {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      border-left: 1px dashed #222;
+      border-right: 1px dashed #222;
+      pointer-events: none;
+    }
+
+    #preview-block {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      cursor: grab;
+      user-select: none;
+    }
+
+    #preview-block:active { cursor: grabbing; }
+
+    .preview-line {
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.4;
+      color: rgba(255,255,255,0.25);
+    }
+
+    .preview-line.preview-current {
+      color: #fff;
+      text-shadow: 0 0 24px rgba(79, 158, 255, 0.7);
+    }
+
+    #drag-hint {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px;
+      color: #2a2a2a;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    /* ── PRESENTATION SCREEN ── */
+    #presentation {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #000;
+      touch-action: manipulation;
+    }
+
+    /* Tap zone — whole screen advances except HUD */
+    #tap-advance {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      cursor: pointer;
+    }
+
+    #script-block {
+      position: absolute;
+      user-select: none;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .pline {
+      line-height: 1.4;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      width: 100%;
+      color: rgba(255,255,255,0.28);
+      transition: opacity 0.22s ease, transform 0.22s ease;
+    }
+
+    .pline + .pline { margin-top: 0.55em; }
+
+    .pline.pline-current {
+      color: #fff;
+      text-shadow: 0 0 28px rgba(79, 158, 255, 0.65);
+    }
+
+    .pline.hidden { display: none; }
+
+    .pline.fade-out { opacity: 0; transform: translateY(-16px); }
+    .pline.slide-in { animation: slideIn 0.22s ease forwards; }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* HUD */
+    #hud {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 20px;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(6px);
+      border-top: 1px solid #1a1a1a;
+      z-index: 100;
+      gap: 12px;
+    }
+
+    #progress-text { font-size: 12px; color: #444; flex: 1; }
+
+    .hud-btn {
+      background: transparent;
+      border: 1px solid #333;
+      color: #666;
+      padding: 6px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+      white-space: nowrap;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .hud-btn:hover  { border-color: #666; color: #fff; }
+    .hud-btn:active { background: #1a1a1a; }
+
+    #progress-bar-wrap {
+      position: fixed;
+      bottom: 48px; left: 0; right: 0;
+      height: 2px;
+      background: #111;
+      z-index: 100;
+    }
+
+    #progress-bar {
+      height: 100%;
+      background: #4f9eff;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    /* Mobile nav buttons — hidden, back/next moved into HUD */
+    #mobile-nav {
+      display: none;
+    }
+
+    .nav-btn {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: 1px solid #222;
+      background: rgba(0,0,0,0.6);
+      color: #555;
+      font-size: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(4px);
+      transition: border-color 0.2s, color 0.2s, background 0.2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .nav-btn:active {
+      background: rgba(79, 158, 255, 0.15);
+      border-color: #4f9eff;
+      color: #4f9eff;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- SETUP SCREEN -->
+  <div id="setup">
+    <div id="left-panel">
+      <h1>Teleprompter <span>·</span></h1>
+
+      <textarea id="script-input" placeholder="Paste your script here.
+Long paragraphs are auto-split to fit the display width.
+
+Paragraph 1...
+Paragraph 2..."></textarea>
+
+      <div class="size-control">
+        <div class="size-label-row">
+          <label>Font size</label>
+          <span id="font-size-display">48px</span>
+        </div>
+        <input type="range" id="font-size-slider" min="20" max="120" value="48" />
+      </div>
+
+      <div class="size-control">
+        <div class="size-label-row">
+          <label>Display width</label>
+          <span id="display-width-display">80%</span>
+        </div>
+        <input type="range" id="display-width-slider" min="30" max="98" value="80" />
+      </div>
+
+      <div class="size-control">
+        <div class="size-label-row">
+          <label>Lines to show</label>
+        </div>
+        <div id="line-count-selector">
+          <button class="lc-btn" data-count="2">2</button>
+          <button class="lc-btn active" data-count="3">3</button>
+          <button class="lc-btn" data-count="4">4</button>
+        </div>
+      </div>
+
+      <button id="start-btn">▶ Start Presentation</button>
+      <p class="hint">
+        <strong>Space / Tap</strong> — next &nbsp;·&nbsp;
+        <strong>←</strong> — back &nbsp;·&nbsp;
+        <strong>Esc</strong> — exit
+      </p>
+    </div>
+
+    <!-- Right: live preview -->
+    <div id="preview-panel">
+      <div id="preview-label">Preview — drag to set position</div>
+      <div id="width-guide"></div>
+      <div id="preview-block"></div>
+      <div id="drag-hint">Drag to position</div>
+    </div>
+  </div>
+
+  <!-- PRESENTATION SCREEN -->
+  <div id="presentation">
+    <div id="tap-advance"></div>
+
+    <div id="hud">
+      <span id="progress-text">Line 1</span>
+      <button class="hud-btn" id="back-btn">◀ Back</button>
+      <button class="hud-btn" id="exit-btn">✕ Exit</button>
+    </div>
+
+    <div id="script-block">
+      <div class="pline" id="pline-0"></div>
+      <div class="pline" id="pline-1"></div>
+      <div class="pline" id="pline-2"></div>
+      <div class="pline" id="pline-3"></div>
+    </div>
+
+    <div id="mobile-nav">
+      <button class="nav-btn" id="nav-back">◀</button>
+      <button class="nav-btn" id="nav-next">▶</button>
+    </div>
+
+    <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+  </div>
+
+  <script>
+    // ── Elements ──
+    const setupEl         = document.getElementById('setup');
+    const presentEl       = document.getElementById('presentation');
+    const scriptInput     = document.getElementById('script-input');
+    const fontSlider      = document.getElementById('font-size-slider');
+    const fontDisplay     = document.getElementById('font-size-display');
+    const widthSlider     = document.getElementById('display-width-slider');
+    const widthDisplay    = document.getElementById('display-width-display');
+    const widthGuide      = document.getElementById('width-guide');
+    const startBtn        = document.getElementById('start-btn');
+    const exitBtn         = document.getElementById('exit-btn');
+    const backBtn         = document.getElementById('back-btn');
+    const navBack         = document.getElementById('nav-back');
+    const navNext         = document.getElementById('nav-next');
+    const tapAdvance      = document.getElementById('tap-advance');
+    const progressText    = document.getElementById('progress-text');
+    const progressBar     = document.getElementById('progress-bar');
+    const scriptBlock     = document.getElementById('script-block');
+    const previewBlock    = document.getElementById('preview-block');
+    const previewPanel    = document.getElementById('preview-panel');
+    const plineEls        = [0,1,2,3].map(i => document.getElementById('pline-' + i));
+
+    let lines         = [];
+    let currentIndex  = 0;
+    let fontSize      = 48;
+    let displayWidthPct = 80;
+    let lineCount     = 3;
+    let animating     = false;
+    let posXFrac      = null;
+    let posYFrac      = null;
+
+    // Canvas for text measurement
+    const mCtx = document.createElement('canvas').getContext('2d');
+
+    function getFontStr(size) {
+      return `500 ${size || fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+    }
+
+    function measureWidth(text, size) {
+      mCtx.font = getFontStr(size);
+      return mCtx.measureText(text).width;
+    }
+
+    // Split a paragraph into lines fitting maxPx
+    function splitParagraph(para, maxPx) {
+      if (!para.trim()) return [];
+      const result = [];
+      const tokens = para.split(' ');
+      let current = '';
+
+      for (const token of tokens) {
+        const test = current ? current + ' ' + token : token;
+        if (measureWidth(test) <= maxPx) {
+          current = test;
+        } else {
+          if (current) result.push(current);
+          if (measureWidth(token) > maxPx) {
+            let charLine = '';
+            for (const ch of token) {
+              const testCh = charLine + ch;
+              if (measureWidth(testCh) <= maxPx) {
+                charLine = testCh;
+              } else {
+                if (charLine) result.push(charLine);
+                charLine = ch;
+              }
+            }
+            current = charLine;
+          } else {
+            current = token;
+          }
+        }
+      }
+      if (current.trim()) result.push(current.trim());
+      return result;
+    }
+
+    function buildLines(rawText, maxPx) {
+      const all = [];
+      for (const para of rawText.split('\n')) {
+        all.push(...splitParagraph(para.trim(), maxPx));
+      }
+      return all.filter(l => l.length > 0);
+    }
+
+    function displayWidthPx() {
+      return window.innerWidth * displayWidthPct / 100;
+    }
+
+    // ── Sliders ──
+    fontSlider.addEventListener('input', () => {
+      fontSize = parseInt(fontSlider.value);
+      fontDisplay.textContent = fontSize + 'px';
+      updatePreview();
+    });
+
+    widthSlider.addEventListener('input', () => {
+      displayWidthPct = parseInt(widthSlider.value);
+      widthDisplay.textContent = displayWidthPct + '%';
+      updateWidthGuide();
+      updatePreview();
+    });
+
+    // ── Line count buttons ──
+    document.getElementById('line-count-selector').addEventListener('click', e => {
+      const btn = e.target.closest('.lc-btn');
+      if (!btn) return;
+      document.querySelectorAll('.lc-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      lineCount = parseInt(btn.dataset.count);
+      updatePreview();
+    });
+
+    function updateWidthGuide() {
+      const panelRect = previewPanel.getBoundingClientRect();
+      const guideW = panelRect.width * displayWidthPct / 100;
+      widthGuide.style.width = guideW + 'px';
+    }
+
+    // ── Preview ──
+    scriptInput.addEventListener('input', updatePreview);
+
+    function updatePreview() {
+      const raw = scriptInput.value.trim();
+      const panelRect = previewPanel.getBoundingClientRect();
+      const maxPx = panelRect.width * displayWidthPct / 100;
+
+      // Rebuild preview line elements
+      previewBlock.innerHTML = '';
+      previewBlock.style.width = maxPx + 'px';
+
+      const previewLines = raw ? buildLines(raw, maxPx) : ['Your line will appear here'];
+
+      for (let i = 0; i < lineCount; i++) {
+        const div = document.createElement('div');
+        div.className = 'preview-line' + (i === 0 ? ' preview-current' : '');
+        div.style.fontSize = fontSize + 'px';
+        div.textContent = previewLines[i] || '';
+        if (i > 0) div.style.marginTop = '0.55em';
+        previewBlock.appendChild(div);
+      }
+    }
+
+    // Init
+    updateWidthGuide();
+    updatePreview();
+
+    // ── Drag preview block ──
+    (function () {
+      let dragging = false, startX, startY, origLeft, origTop;
+
+      previewBlock.addEventListener('mousedown', e => {
+        dragging = true;
+        startX = e.clientX; startY = e.clientY;
+        const rect = previewBlock.getBoundingClientRect();
+        const panelRect = previewPanel.getBoundingClientRect();
+        origLeft = rect.left - panelRect.left;
+        origTop  = rect.top  - panelRect.top;
+        previewBlock.style.transform = 'none';
+        previewBlock.style.left = origLeft + 'px';
+        previewBlock.style.top  = origTop  + 'px';
+        e.preventDefault();
+      });
+
+      document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        const panelRect = previewPanel.getBoundingClientRect();
+        let newLeft = origLeft + (e.clientX - startX);
+        let newTop  = origTop  + (e.clientY - startY);
+        newLeft = Math.max(0, Math.min(panelRect.width  - previewBlock.offsetWidth,  newLeft));
+        newTop  = Math.max(0, Math.min(panelRect.height - previewBlock.offsetHeight, newTop));
+        previewBlock.style.left = newLeft + 'px';
+        previewBlock.style.top  = newTop  + 'px';
+      });
+
+      document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        const panelRect = previewPanel.getBoundingClientRect();
+        const rect = previewBlock.getBoundingClientRect();
+        posXFrac = (rect.left - panelRect.left) / panelRect.width;
+        posYFrac = (rect.top  - panelRect.top)  / panelRect.height;
+      });
+    })();
+
+    // ── Drag script block in presentation ──
+    (function () {
+      let dragging = false, startX, startY, origLeft, origTop;
+
+      scriptBlock.addEventListener('mousedown', e => {
+        dragging = true;
+        startX = e.clientX; startY = e.clientY;
+        origLeft = parseFloat(scriptBlock.style.left) || 0;
+        origTop  = parseFloat(scriptBlock.style.top)  || 0;
+        e.preventDefault();
+        e.stopPropagation();
+      });
+
+      scriptBlock.addEventListener('touchstart', e => {
+        dragging = true;
+        startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+        origLeft = parseFloat(scriptBlock.style.left) || 0;
+        origTop  = parseFloat(scriptBlock.style.top)  || 0;
+        e.stopPropagation();
+      }, { passive: true });
+
+      document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        let newLeft = origLeft + (e.clientX - startX);
+        let newTop  = origTop  + (e.clientY - startY);
+        newLeft = Math.max(0, Math.min(window.innerWidth  - scriptBlock.offsetWidth,  newLeft));
+        newTop  = Math.max(0, Math.min(window.innerHeight - scriptBlock.offsetHeight, newTop));
+        scriptBlock.style.left = newLeft + 'px';
+        scriptBlock.style.top  = newTop  + 'px';
+      });
+
+      document.addEventListener('touchmove', e => {
+        if (!dragging) return;
+        let newLeft = origLeft + (e.touches[0].clientX - startX);
+        let newTop  = origTop  + (e.touches[0].clientY - startY);
+        newLeft = Math.max(0, Math.min(window.innerWidth  - scriptBlock.offsetWidth,  newLeft));
+        newTop  = Math.max(0, Math.min(window.innerHeight - scriptBlock.offsetHeight, newTop));
+        scriptBlock.style.left = newLeft + 'px';
+        scriptBlock.style.top  = newTop  + 'px';
+      }, { passive: true });
+
+      function stopDrag() { dragging = false; }
+      document.addEventListener('mouseup',  stopDrag);
+      document.addEventListener('touchend', stopDrag);
+    })();
+
+    // ── Start ──
+    startBtn.addEventListener('click', () => {
+      const raw = scriptInput.value.trim();
+      if (!raw) return;
+
+      const maxPx = displayWidthPx();
+      lines = buildLines(raw, maxPx);
+      if (lines.length === 0) return;
+
+      currentIndex = 0;
+
+      let startLeft, startTop;
+      if (posXFrac !== null) {
+        startLeft = posXFrac * window.innerWidth;
+        startTop  = posYFrac * window.innerHeight;
+      } else {
+        startLeft = window.innerWidth  * (1 - displayWidthPct / 100) / 2;
+        startTop  = window.innerHeight / 2 - fontSize * lineCount;
+      }
+
+      scriptBlock.style.left  = startLeft + 'px';
+      scriptBlock.style.top   = startTop  + 'px';
+      scriptBlock.style.width = maxPx + 'px';
+
+      plineEls.forEach((el, i) => {
+        el.style.fontSize = fontSize + 'px';
+        el.classList.toggle('hidden', i >= lineCount);
+      });
+
+      setupEl.style.display   = 'none';
+      presentEl.style.display = 'block';
+      renderLines();
+    });
+
+    function renderLines() {
+      const total = lines.length;
+      plineEls.forEach((el, i) => {
+        if (i >= lineCount) return;
+        el.textContent = lines[currentIndex + i] || '';
+        el.classList.toggle('pline-current', i === 0);
+      });
+      progressText.textContent = `Line ${currentIndex + 1} of ${total}`;
+      progressBar.style.width  = ((currentIndex + 1) / total * 100) + '%';
+    }
+
+    function advance() {
+      if (animating || currentIndex >= lines.length - 1) return;
+      animating = true;
+
+      plineEls.slice(0, lineCount).forEach(el => el.classList.add('fade-out'));
+
+      setTimeout(() => {
+        plineEls.slice(0, lineCount).forEach(el => el.classList.remove('fade-out'));
+        currentIndex++;
+        renderLines();
+        plineEls.slice(0, lineCount).forEach(el => el.classList.add('slide-in'));
+
+        setTimeout(() => {
+          plineEls.slice(0, lineCount).forEach(el => el.classList.remove('slide-in'));
+          animating = false;
+        }, 220);
+      }, 220);
+    }
+
+    function goBack() {
+      if (animating || currentIndex === 0) return;
+      currentIndex--;
+      renderLines();
+    }
+
+    function exitPresentation() {
+      presentEl.style.display = 'none';
+      setupEl.style.display   = 'flex';
+    }
+
+    // ── Controls ──
+    tapAdvance.addEventListener('click',     advance);
+    tapAdvance.addEventListener('touchend',  e => { e.preventDefault(); advance(); });
+    navNext.addEventListener('click',        e => { e.stopPropagation(); advance(); });
+    navBack.addEventListener('click',        e => { e.stopPropagation(); goBack(); });
+    backBtn.addEventListener('click',        e => { e.stopPropagation(); goBack(); });
+    exitBtn.addEventListener('click',        e => { e.stopPropagation(); exitPresentation(); });
+
+    document.addEventListener('keydown', e => {
+      if (presentEl.style.display === 'none') return;
+      if (e.code === 'Space')     { e.preventDefault(); advance(); }
+      if (e.code === 'ArrowLeft') { e.preventDefault(); goBack(); }
+      if (e.code === 'Escape')    { exitPresentation(); }
+    });
+
+    window.addEventListener('resize', updateWidthGuide);
+  </script>
+</body>
+</html>
